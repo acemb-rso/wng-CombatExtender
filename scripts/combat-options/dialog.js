@@ -260,9 +260,17 @@ function ensureWeaponDialogPatched(app) {
       submitData.context.breakdown = this.createBreakdown();
     }
 
-    if (canvas?.scene) {
-      game.canvas.tokens.setTargets([]);
-    }
+    // DON'T clear targets after attack - we need them for the damage dialog!
+    // The damage roll's applyToTargets() checks game.user.targets first, then
+    // falls back to stored target data. By preserving the selection, users can:
+    // 1. Apply damage immediately without re-targeting
+    // 2. Add additional targets if they forgot to target someone
+    // 3. Change targets if needed before applying damage
+    // 
+    // Original code that cleared targets:
+    // if (canvas?.scene) {
+    //   game.canvas.tokens.setTargets([]);
+    // }
 
     return submitData;
   };
