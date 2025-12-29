@@ -100,7 +100,8 @@ function extractPersistentDamageOverride(effect) {
 async function evaluatePersistentDamage(effect, conditionConfig) {
   if (!effect || !conditionConfig) return null;
 
-  const label = conditionConfig.labelKey ? game.i18n.localize(conditionConfig.labelKey) : (effect.name ?? conditionConfig.id);
+  const label = conditionConfig.labelKey ?
+    game.i18n.localize(conditionConfig.labelKey) : (effect.name ?? conditionConfig.id);
   const override = extractPersistentDamageOverride(effect);
   let detail = null;
   let amount;
@@ -233,69 +234,16 @@ async function promptPersistentDamageAtTurnEnd(combatant) {
 
   const summary = results.map((entry) => entry.amount).reduce((total, value) => total + value, 0);
 
-  // Show dialog with adjustable damage input
-  const result = await Dialog.wait({
+  await Dialog.prompt({
     title: game.i18n.localize("WNGCE.PersistentDamage.Title"),
-    content: `
-      <p>${game.i18n.localize("WNGCE.PersistentDamage.Description")}</p>
-      <ol>${detailItems}</ol>
-      <p><strong>${game.i18n.format("WNGCE.PersistentDamage.Total", { total: summary })}</strong></p>
-      <div class="form-group" style="margin-top: 1em;">
-        <label style="font-weight: bold;">Mortal Wounds to Apply:</label>
-        <input type="number" name="persistent-damage" value="${summary}" min="0" 
-               style="width: 100%; margin-top: 0.25em;" />
-        <p class="notes" style="margin-top: 0.5em; font-size: 0.9em; font-style: italic;">
-          You can adjust this value if the character has traits like Arsonist that modify persistent damage.
-        </p>
-      </div>
-    `,
-    buttons: {
-      apply: {
-        icon: '<i class="fas fa-check"></i>',
-        label: "Apply Damage",
-        callback: (html) => {
-          const $html = html instanceof jQuery ? html : $(html);
-          const input = $html.find('[name="persistent-damage"]')[0];
-          const value = input?.value ?? summary;
-          return sanitizePersistentDamageValue(value);
-        }
-      },
-      cancel: {
-        icon: '<i class="fas fa-times"></i>',
-        label: "Cancel",
-        callback: () => null
-      }
-    },
-    default: "apply",
-    close: () => null,
-    rejectClose: false
-  });
-
-  // Apply the damage if user didn't cancel and entered a valid amount
-  if (result !== null && result > 0) {
-    try {
-      // Apply mortal wounds to the actor
-      const report = await actor.applyDamage(0, { mortal: result });
-      
-      // Create chat message showing the damage was applied
-      const activeTokens = typeof actor.getActiveTokens === "function" ? actor.getActiveTokens() : [];
-      const token = activeTokens[0]?.document ?? actor.prototypeToken;
-      
-      await ChatMessage.create({
-        content: `<p data-tooltip-direction="LEFT" data-tooltip="${report.breakdown}">${report.message}</p>`,
-        speaker: ChatMessage.getSpeaker({ actor: actor, token: token })
-      });
-      
-      log(`Applied ${result} mortal wounds from persistent damage to ${actor.name}`);
-    } catch (err) {
-      logError(`Failed to apply persistent damage to ${actor.name}`, err);
-      ui.notifications.error(`Failed to apply persistent damage to ${actor.name}: ${err.message}`);
+    content: `<p>${game.i18n.localize("WNGCE.PersistentDamage.Description")}</p><ol>${detailItems}</ol><p>${game.i18n.format("WNGCE.PersistentDamage.Total", { total: summary })}</p>`,
+    rejectClose: false,
+    render: (html) => {
+      const input = html instanceof jQuery ? html.find('[name="persistent-damage"]').get(0) : html.querySelector?.('[name="persistent-damage"]');
+      if (!input) return;
+      input.value = sanitizePersistentDamageValue(summary);
     }
-  } else if (result === 0) {
-    log(`Persistent damage for ${actor.name} was set to 0 and not applied`);
-  } else {
-    log(`Persistent damage application cancelled for ${actor.name}`);
-  }
+  });
 }
 
 function shouldNotifySlowedConditions() {
@@ -453,10 +401,22 @@ export function registerTurnEffectHooks() {
     }
   });
 
-  Hooks.on("combatTurn", async (combat) => {
+  // Remove All-Out Attack at the START of the combatant's next turn
+  // The rule says the penalty lasts "until the start of your next Turn"
+  // This hooks into updateCombatant to detect when a combatant transitions
+  // from "pending" or "complete" status to "current", which indicates their turn is starting
+  Hooks.on("updateCombatant", async (combatant, changed, options, userId) => {
     if (game.system?.id !== "wrath-and-glory") return;
-    const actor = combat?.combatant?.actor;
-    await removeAllOutAttackFromActor(actor);
+    if (!changed.flags?.["wrath-and-glory"]?.combatStatus) return;
+    
+    const oldStatus = combatant.flags?.["wrath-and-glory"]?.combatStatus;
+    const newStatus = changed.flags["wrath-and-glory"].combatStatus;
+    
+    // Remove All-Out Attack when combatant's turn starts
+    // (transitions from "pending" or "complete" to "current")
+    if ((oldStatus === "pending" || oldStatus === "complete") && newStatus === "current") {
+      await removeAllOutAttackFromActor(combatant.actor);
+    }
   });
 }
 
