@@ -401,16 +401,27 @@ export function registerTurnEffectHooks() {
     }
   });
 
-  // Remove All-Out Attack at the START of the combatant's next turn
+  // FIX FOR ISSUE #2: Remove All-Out Attack at the START of the combatant's next turn
   // The rule says the penalty lasts "until the start of your next Turn"
-  // This hooks into updateCombatant to detect when a combatant transitions
-  // from "pending" or "complete" status to "current", which indicates their turn is starting
+  // Use preUpdateCombatant to check the old status before it changes
+  let combatantOldStatus = new Map();
+  
+  Hooks.on("preUpdateCombatant", (combatant, changed, options, userId) => {
+    if (game.system?.id !== "wrath-and-glory") return;
+    if (!changed.flags?.["wrath-and-glory"]?.combatStatus) return;
+    
+    // Store the old status before the update
+    const oldStatus = combatant.flags?.["wrath-and-glory"]?.combatStatus;
+    combatantOldStatus.set(combatant.id, oldStatus);
+  });
+  
   Hooks.on("updateCombatant", async (combatant, changed, options, userId) => {
     if (game.system?.id !== "wrath-and-glory") return;
     if (!changed.flags?.["wrath-and-glory"]?.combatStatus) return;
     
-    const oldStatus = combatant.flags?.["wrath-and-glory"]?.combatStatus;
+    const oldStatus = combatantOldStatus.get(combatant.id);
     const newStatus = changed.flags["wrath-and-glory"].combatStatus;
+    combatantOldStatus.delete(combatant.id);
     
     // Remove All-Out Attack when combatant's turn starts
     // (transitions from "pending" or "complete" to "current")
