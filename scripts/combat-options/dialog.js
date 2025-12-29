@@ -418,12 +418,12 @@ async function applyCombatExtender(dialog) {
   }
 
   const visionKey = fields.visionPenalty;
-  const visionPenalty = VISION_PENALTIES[visionKey];
-  if (visionPenalty) {
+  const visionPenaltyData = VISION_PENALTIES[visionKey];
+  if (visionPenaltyData) {
     const previousDifficulty = difficulty;
-    const penalty = weapon?.isMelee ? visionPenalty.melee : visionPenalty.ranged;
+    const penalty = weapon?.isMelee ? visionPenaltyData.melee : visionPenaltyData.ranged;
     if (penalty > 0) difficulty += penalty;
-    addTooltip("difficulty", penalty ?? 0, visionPenalty.label);
+    addTooltip("difficulty", penalty ?? 0, visionPenaltyData.label);
     logDebug("CE vision modifier:", { visionKey, penalty, previousDifficulty, nextDifficulty: difficulty });
   }
 
