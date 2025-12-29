@@ -429,20 +429,27 @@ export function registerTurnEffectHooks() {
 Hooks.on("combatTurn", async (combat) => {
   notifySlowedConditions(combat);
 
-  // AOA: start-of-turn cleanup for the NEW active combatant
-  const actor = combat?.combatant?.actor;
-  await removeAllOutAttackFromActor(actor);
-
   // Persistent Damage: end-of-turn behavior (your existing pattern)
   if (!shouldHandlePersistentDamage()) return;
   promptPendingPersistentDamage(combat);
 });
 
 
-  Hooks.on("updateCombat", (combat, changed) => {
-    if (!shouldHandlePersistentDamage() || !isTurnChangeUpdate(changed)) return;
-    promptPendingPersistentDamage(combat);
-  });
+Hooks.on("updateCombat", (combat, changed) => {
+  // Only run when the turn actually advanced
+  if (!isTurnChangeUpdate(changed)) return;
+  if (!isActivePrimaryGM()) return;
+
+  // Defer so Combat has updated its active combatant getter
+  setTimeout(async () => {
+    const actor = combat?.combatant?.actor;
+    if (actor) await removeAllOutAttackFromActor(actor);
+  }, 0);
+
+  // keep your existing PD fallback:
+  if (shouldHandlePersistentDamage()) promptPendingPersistentDamage(combat);
+});
+
 
   Hooks.on("deleteCombat", async (combat) => {
     cleanupPendingPersistentDamageForCombat(combat?.id);
