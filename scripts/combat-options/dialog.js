@@ -833,9 +833,9 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       root.off(".combatOptions");
       $html.off("change.combatOptions");
 
-      if (shouldRecompute && typeof app.render === "function") {
-        app.render(true);
-      }
+      // NOTE: We do NOT call app.render() here even if shouldRecompute is true
+      // The hook already updates the UI by replacing the template (lines 805-816)
+      // Calling render() from within a render hook creates infinite loops
 
       root.on("toggle.combatOptions", () => {
         app._combatOptionsOpen = root.prop("open");
@@ -880,9 +880,9 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
           await syncAllOutAttackCondition(actor, Boolean(value));
         }
 
-        // FIX #3: _onFieldChange already calls render, so we don't need to render again
-        // This was causing double renders on every change
-        if (typeof app._onFieldChange === "function") {
+        // FIX #3: _onFieldChange already calls render, but DON'T call it if we're
+        // already in a render cycle (this would cause infinite loop)
+        if (typeof app._onFieldChange === "function" && !app._isRendering) {
           await app._onFieldChange(ev);
           // Early return - don't do anything else after _onFieldChange
           return;
