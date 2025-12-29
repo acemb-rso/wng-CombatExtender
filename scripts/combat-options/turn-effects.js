@@ -430,7 +430,8 @@ Hooks.on("combatTurn", async (combat) => {
   notifySlowedConditions(combat);
 
   // AOA: start-of-turn cleanup for the NEW active combatant
-  await removeAllOutAttackFromActor(combatant?.actor);
+  const actor = combat?.combatant?.actor;
+  await removeAllOutAttackFromActor(actor);
 
   // Persistent Damage: end-of-turn behavior (your existing pattern)
   if (!shouldHandlePersistentDamage()) return;
