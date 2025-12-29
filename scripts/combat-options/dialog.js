@@ -364,8 +364,13 @@ async function applyCombatExtender(dialog) {
   fields.ap = foundry.utils.mergeObject({ value: 0, dice: 0 }, fields.ap ?? {}, { inplace: false });
   if (fields.damage === undefined) fields.damage = 0;
 
-  const { cover, visionPenalty, sizeModifier, pool: initialPool, difficulty: initialDifficulty } = fields;
-  logDebug("CE fields at start:", { cover, visionPenalty, sizeModifier, pool: initialPool, difficulty: initialDifficulty });
+  logDebug("CE fields at start:", { 
+    cover: fields.cover, 
+    visionPenalty: fields.visionPenalty, 
+    sizeModifier: fields.sizeModifier, 
+    pool: fields.pool, 
+    difficulty: fields.difficulty 
+  });
 
   const systemBaselineSnapshot = foundry.utils.deepClone(fields ?? {});
   const systemDifficulty = Number.isFinite(systemBaselineSnapshot.difficulty)
@@ -428,17 +433,17 @@ async function applyCombatExtender(dialog) {
   }
 
   const sizeKey = fields.sizeModifier;
-  const sizeModifier = SIZE_MODIFIER_OPTIONS[sizeKey];
-  if (sizeModifier) {
+  const sizeModifierData = SIZE_MODIFIER_OPTIONS[sizeKey];
+  if (sizeModifierData) {
     const previousPool = pool;
     const previousDifficulty = difficulty;
-    if (sizeModifier.pool) {
-      pool += sizeModifier.pool;
-      addTooltip("pool", sizeModifier.pool, sizeModifier.label);
+    if (sizeModifierData.pool) {
+      pool += sizeModifierData.pool;
+      addTooltip("pool", sizeModifierData.pool, sizeModifierData.label);
     }
-    if (sizeModifier.difficulty) {
-      difficulty += sizeModifier.difficulty;
-      addTooltip("difficulty", sizeModifier.difficulty, sizeModifier.label);
+    if (sizeModifierData.difficulty) {
+      difficulty += sizeModifierData.difficulty;
+      addTooltip("difficulty", sizeModifierData.difficulty, sizeModifierData.label);
     }
     logDebug("CE size modifier:", { sizeKey, previousPool, nextPool: pool, previousDifficulty, nextDifficulty: difficulty });
   }
