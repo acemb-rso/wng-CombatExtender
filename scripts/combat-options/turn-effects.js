@@ -426,10 +426,15 @@ export function registerTurnEffectHooks() {
     markPendingPersistentDamage(combat, changed);
   });
 
-  Hooks.on("combatTurn", (combat) => {
+  Hooks.on("combatTurn", async (combat) => {
     notifySlowedConditions(combat);
     if (!shouldHandlePersistentDamage()) return;
     promptPendingPersistentDamage(combat);
+    
+    const actor = combat?.combatant?.actor;
+    if (!actor) return;
+    // start-of-turn cleanup for the NEW active combatant
+    await removeAllOutAttackFromActor(actor);
   });
 
   Hooks.on("updateCombat", (combat, changed) => {
@@ -454,34 +459,6 @@ export function registerTurnEffectHooks() {
     }
   });
 
-  // FIX FOR ISSUE #2: Remove All-Out Attack at the START of the combatant's next turn
-  // The rule says the penalty lasts "until the start of your next Turn"
-  // Use preUpdateCombatant to check the old status before it changes
-  let combatantOldStatus = new Map();
-  
-  Hooks.on("preUpdateCombatant", (combatant, changed, options, userId) => {
-    if (game.system?.id !== "wrath-and-glory") return;
-    if (!changed.flags?.["wrath-and-glory"]?.combatStatus) return;
-    
-    // Store the old status before the update
-    const oldStatus = combatant.flags?.["wrath-and-glory"]?.combatStatus;
-    combatantOldStatus.set(combatant.id, oldStatus);
-  });
-  
-  Hooks.on("updateCombatant", async (combatant, changed, options, userId) => {
-    if (game.system?.id !== "wrath-and-glory") return;
-    if (!changed.flags?.["wrath-and-glory"]?.combatStatus) return;
-    
-    const oldStatus = combatantOldStatus.get(combatant.id);
-    const newStatus = changed.flags["wrath-and-glory"].combatStatus;
-    combatantOldStatus.delete(combatant.id);
-    
-    // Remove All-Out Attack when combatant's turn starts
-    // (transitions from "pending" or "complete" to "current")
-    if ((oldStatus === "pending" || oldStatus === "complete") && newStatus === "current") {
-      await removeAllOutAttackFromActor(combatant.actor);
-    }
-  });
 }
 
 export { actorHasStatus };
