@@ -246,7 +246,7 @@ async function promptPersistentDamageAtTurnEnd(combatant) {
         <input type="number" name="persistent-damage" value="${summary}" min="0" 
                style="width: 100%; margin-top: 0.25em;" />
         <p class="notes" style="margin-top: 0.5em; font-size: 0.9em; font-style: italic;">
-          You can adjust this value if the character has traits like Arsonist that modify persistent damage.
+          You can adjust this value to modify persistent damage.
         </p>
       </div>
     `,
@@ -426,16 +426,20 @@ export function registerTurnEffectHooks() {
     markPendingPersistentDamage(combat, changed);
   });
 
-  Hooks.on("combatTurn", async (combat) => {
-    notifySlowedConditions(combat);
-    if (!shouldHandlePersistentDamage()) return;
-    promptPendingPersistentDamage(combat);
-    
+Hooks.on("combatTurn", async (combat) => {
+  notifySlowedConditions(combat);
+
+  // AOA: start-of-turn cleanup for the NEW active combatant
+  if (isActivePrimaryGM()) {
     const actor = combat?.combatant?.actor;
-    if (!actor) return;
-    // start-of-turn cleanup for the NEW active combatant
-    await removeAllOutAttackFromActor(actor);
-  });
+    if (actor) await removeAllOutAttackFromActor(actor);
+  }
+
+  // Persistent Damage: end-of-turn behavior (your existing pattern)
+  if (!shouldHandlePersistentDamage()) return;
+  promptPendingPersistentDamage(combat);
+});
+
 
   Hooks.on("updateCombat", (combat, changed) => {
     if (!shouldHandlePersistentDamage() || !isTurnChangeUpdate(changed)) return;
