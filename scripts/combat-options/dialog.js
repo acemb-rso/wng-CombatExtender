@@ -408,6 +408,10 @@ async function applyCombatExtender(dialog) {
     // Tooltip implementation
   };
 
+  console.log("=== CE DEBUG START ===");
+  console.log("CE: fields.aim at start =", fields.aim);
+  console.log("CE: fields.pool at start =", fields.pool);
+  
   // --- Pistols while Engaged ---
   // Only pistols can be used as ranged weapons while engaged
   // Other ranged weapons cannot attack at all while engaged
@@ -589,6 +593,10 @@ async function applyCombatExtender(dialog) {
     fields.ap = foundry.utils.deepClone(systemBaselineSnapshot.ap ?? fields.ap);
   }
 
+  console.log("CE: fields.aim at end =", fields.aim);
+  console.log("CE: fields.pool at end =", fields.pool);
+  console.log("=== CE DEBUG END ===");
+  
   return dialog.fields;
 }
 
@@ -683,8 +691,8 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const $html = html instanceof jQuery ? html : $(html);
 
-      // REMOVED: Don't remove the Aim checkbox - we'll disable it instead when engaged
-      // $html.find('.form-group').has('input[name="aim"]').remove();
+    
+      $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
 
