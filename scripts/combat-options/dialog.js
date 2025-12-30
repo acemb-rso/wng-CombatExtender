@@ -371,6 +371,10 @@ async function applyCombatExtender(dialog) {
   fields.ap = foundry.utils.mergeObject({ value: 0, dice: 0 }, fields.ap ?? {}, { inplace: false });
   if (fields.damage === undefined) fields.damage = 0;
 
+  console.log("=== CE DEBUG START ===");
+  console.log("CE: fields.aim at start =", fields.aim);
+  console.log("CE: fields.pool at start =", fields.pool);
+
   logDebug("CE fields at start:", { 
     cover: fields.cover, 
     visionPenalty: fields.visionPenalty, 
@@ -421,24 +425,38 @@ async function applyCombatExtender(dialog) {
   // instead of DOM cache which may not be set yet on first render
   const rangeBand = String(dialog.fields?.range ?? "").toLowerCase();
 
-  // Clear Aim for ANY ranged weapon while engaged
-  if (isEngaged && weapon?.isRanged) {
-    if (fields.aim) fields.aim = false;
-  }
+  console.log("CE: isEngaged =", isEngaged);
+  console.log("CE: weapon.isRanged =", weapon?.isRanged);
+  console.log("CE: hasPistol =", hasPistol);
+  console.log("CE: rangeBand =", rangeBand);
+  console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPistol));
 
   if (isEngaged && weapon?.isRanged && hasPistol) {
+    console.log("CE: INSIDE engagement block");
+    
     // +2 DN when firing pistols while engaged
     difficulty += 2;
     addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
 
+    // Cannot Aim while engaged
+    console.log("CE: fields.aim before clear =", fields.aim);
+    if (fields.aim) fields.aim = false;
+    console.log("CE: fields.aim after clear =", fields.aim);
+
     // Short range bonus die is not allowed while engaged
     if (rangeBand === "short") {
+      console.log("CE: Suppressing short range, pool before =", pool);
       pool -= 1;
       addTooltip("pool", -1, "Short Range suppressed (Engaged)");
+      console.log("CE: pool after suppression =", pool);
     }
 
     // Set UI flag
     fields.pistolsInMelee = true;
+  } else {
+    console.log("CE: NOT in engagement block");
+  }
+  // --- end pistols while engaged ---
   }
   // --- end pistols while engaged ---
 
@@ -590,6 +608,10 @@ async function applyCombatExtender(dialog) {
     fields.ed = foundry.utils.deepClone(systemBaselineSnapshot.ed ?? fields.ed);
     fields.ap = foundry.utils.deepClone(systemBaselineSnapshot.ap ?? fields.ap);
   }
+
+  console.log("CE: fields.aim at end =", fields.aim);
+  console.log("CE: fields.pool at end =", fields.pool);
+  console.log("=== CE DEBUG END ===");
 
   return dialog.fields;
 }
