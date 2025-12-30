@@ -170,45 +170,31 @@ Hooks.once("setup", () => {
     return;
   }
 
-  console.log("Combat Extender: Setting up libWrapper patches");
+  console.log("Combat Extender: Will register patches on first dialog render");
+});
 
-  // Wait for ready and then check multiple times for WeaponDialog
-  Hooks.once("ready", () => {
-    // Try immediate access
-    if (game.wng?.applications?.WeaponDialog) {
-      registerLibWrapperPatches();
-      return;
-    }
+let libWrapperPatchesRegistered = false;
 
-    // If not available, try after a short delay
-    setTimeout(() => {
-      if (game.wng?.applications?.WeaponDialog) {
-        registerLibWrapperPatches();
-        return;
-      }
-      console.error("Combat Extender: WeaponDialog class not found after delay");
-    }, 100);
-  });
-
-  // Also hook into the first render as a fallback
-  Hooks.once("renderWeaponDialog", (app) => {
-    if (!game.wng?.applications?.WeaponDialog) {
-      console.log("Combat Extender: Registering patches on first render");
-      registerLibWrapperPatches();
-    }
-  });
+// Patch on first dialog render when we know the class exists
+Hooks.on("renderWeaponDialog", (app) => {
+  if (libWrapperPatchesRegistered) return;
+  
+  console.log("Combat Extender: First dialog render, registering patches");
+  registerLibWrapperPatches();
+  libWrapperPatchesRegistered = true;
 });
 
 function registerLibWrapperPatches() {
-  if (!game.wng?.applications?.WeaponDialog) {
-    console.error("Combat Extender: WeaponDialog class not found in registerLibWrapperPatches");
+  // Get the WeaponDialog class from the game object
+  const WeaponDialogClass = game.wng?.applications?.WeaponDialog;
+  
+  if (!WeaponDialogClass) {
+    console.error("Combat Extender: WeaponDialog class not found in game.wng.applications");
     return;
   }
 
   try {
     console.log("Combat Extender: Registering libWrapper patches now");
-    
-    const WeaponDialogClass = game.wng.applications.WeaponDialog;
   
   // Patch _defaultFields
   libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._defaultFields', function(wrapped) {
