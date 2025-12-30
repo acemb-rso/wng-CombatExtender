@@ -205,9 +205,10 @@ function registerLibWrapperPatches() {
     return;
   }
 
-  console.log("Combat Extender: Registering libWrapper patches now");
-  
-  const WeaponDialogClass = game.wng.applications.WeaponDialog;
+  try {
+    console.log("Combat Extender: Registering libWrapper patches now");
+    
+    const WeaponDialogClass = game.wng.applications.WeaponDialog;
   
   // Patch _defaultFields
   libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._defaultFields', function(wrapped) {
