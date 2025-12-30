@@ -211,7 +211,10 @@ Hooks.once("setup", () => {
 
     // Patch computeFields
     libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype.computeFields', async function(wrapped, ...args) {
+      console.log("CE LibWrapper: computeFields called");
       const result = await wrapped(...args);
+      
+      console.log("CE LibWrapper: after wrapped, fields.pool =", this.fields?.pool, "fields.aim =", this.fields?.aim);
       
       this._combatExtenderSystemBaseline = foundry.utils.deepClone(this.fields ?? {});
       
@@ -220,6 +223,8 @@ Hooks.once("setup", () => {
       } catch (err) {
         logError("Combat Extender computeFields patch failed", err);
       }
+      
+      console.log("CE LibWrapper: after applyCombatExtender, fields.pool =", this.fields?.pool);
       
       return result ?? this.fields;
     }, 'WRAPPER');
