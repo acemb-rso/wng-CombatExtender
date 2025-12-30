@@ -163,134 +163,148 @@ Hooks.once("init", async () => {
   Handlebars.registerHelper("concat", (...a) => a.slice(0, -1).join(""));
 });
 
-const patchedWeaponDialogPrototypes = new WeakSet();
-
-function ensureWeaponDialogPatched(app) {
-  const prototype = app?.constructor?.prototype ?? Object.getPrototypeOf(app);
-  if (!prototype || prototype === Application.prototype) return false;
-  if (patchedWeaponDialogPrototypes.has(prototype)) return false;
-
-  const originalPrepareContext = prototype._prepareContext;
-  const originalDefaultFields  = prototype._defaultFields;
-  const originalComputeFields = prototype.computeFields;
-  const originalGetSubmissionData = prototype._getSubmissionData;
-
-  if (typeof originalPrepareContext !== "function" ||
-      typeof originalDefaultFields  !== "function" ||
-      typeof originalGetSubmissionData !== "function" ||
-      typeof originalComputeFields !== "function") {
-    logError("WeaponDialog prototype missing expected methods");
-    return false;
+Hooks.once("setup", () => {
+  // Use libWrapper to patch WeaponDialog methods early and properly
+  if (!game.modules.get('lib-wrapper')?.active) {
+    console.error("Combat Extender requires the 'libWrapper' module. Please install and activate it.");
+    return;
   }
 
-  prototype._prepareContext = async function (options) {
-    const context = await originalPrepareContext.call(this, options);
+  console.log("Combat Extender: Setting up libWrapper patches");
 
-    context.coverOptions = {
-      "": "No Cover",
-      half: COMBAT_OPTION_LABELS.halfCover,
-      full: COMBAT_OPTION_LABELS.fullCover
-    };
+  // Patch computeFields to run applyCombatExtender after system computation
+  libWrapper.register(MODULE_ID, 'CONFIG.Item.documentClasses.weapon.prototype.roll', async function(wrapped, ...args) {
+    // This intercepts weapon rolls, but we need the dialog class
+    return wrapped(...args);
+  }, 'WRAPPER');
 
-    const weapon = this.weapon;
-    const salvoValue = Number(weapon?.system?.salvo ?? weapon?.salvo ?? 0);
-    const canPinning = Boolean(weapon?.isRanged) && Number.isFinite(salvoValue) && salvoValue > 1;
-
-    const fields = this.fields ?? (this.fields = {});
-    if (!canPinning && fields.pinning) {
-      fields.pinning = false;
+  // Better approach: patch the WeaponDialog class methods
+  // We need to wait for it to be available
+  Hooks.once("ready", () => {
+    if (!game.wng?.applications?.WeaponDialog) {
+      console.error("Combat Extender: WeaponDialog class not found");
+      return;
     }
 
-    const actor = this.actor ?? this.token?.actor ?? null;
-    const isEngaged = Boolean(getEngagedEffect(actor));
-    const pistolTrait = weapon?.system?.traits;
-    const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
-    const canPistolsInMelee = hasPistolTrait && isEngaged;
-    this._combatOptionsCanPistolsInMelee = canPistolsInMelee;
+    const WeaponDialogClass = game.wng.applications.WeaponDialog;
+    
+    // Patch _defaultFields
+    libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._defaultFields', function(wrapped) {
+      const baseFields = wrapped();
+      return foundry.utils.mergeObject(baseFields, {
+        cover: "",
+        visionPenalty: "",
+        sizeModifier: "",
+        allOutAttack: false,
+        charging: false,
+        aim: false,
+        brace: false,
+        pinning: false,
+        pistolsInMelee: false,
+        disarm: false,
+        calledShot: {
+          enabled: false,
+          size: ""
+        }
+      });
+    }, 'WRAPPER');
 
-    return context;
-  };
-
-  prototype._defaultFields = function () {
-    const baseFields = originalDefaultFields.call(this);
-    return foundry.utils.mergeObject(baseFields, {
-      cover: "",
-      visionPenalty: "",
-      sizeModifier: "",
-      allOutAttack: false,
-      charging: false,
-      aim: false,
-      brace: false,
-      pinning: false,
-      pistolsInMelee: false,
-      disarm: false,
-      calledShot: {
-        enabled: false,
-        size: ""
+    // Patch computeFields
+    libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype.computeFields', async function(wrapped, ...args) {
+      const result = await wrapped(...args);
+      
+      this._combatExtenderSystemBaseline = foundry.utils.deepClone(this.fields ?? {});
+      
+      try {
+        await applyCombatExtender(this);
+      } catch (err) {
+        logError("Combat Extender computeFields patch failed", err);
       }
-    });
-  };
+      
+      return result ?? this.fields;
+    }, 'WRAPPER');
 
-  prototype._getSubmissionData = function () {
-    const submitData = foundry.utils.mergeObject(this.data ?? {}, this.fields ?? {});
-    submitData.context = this.context;
+    // Patch _prepareContext
+    libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._prepareContext', async function(wrapped, options) {
+      const context = await wrapped(options);
 
-    if (!this.context?.skipTargets) {
-      const rawTargets = Array.isArray(submitData.targets)
-        ? submitData.targets
-        : Array.from(submitData.targets ?? []);
+      context.coverOptions = {
+        "": "No Cover",
+        half: COMBAT_OPTION_LABELS.halfCover,
+        full: COMBAT_OPTION_LABELS.fullCover
+      };
 
-      submitData.targets = rawTargets
-        .map((target) => {
-          const actor = resolveTargetActor(target);
-          if (!actor) return null;
+      const weapon = this.weapon;
+      const salvoValue = Number(weapon?.system?.salvo ?? weapon?.salvo ?? 0);
+      const canPinning = Boolean(weapon?.isRanged) && Number.isFinite(salvoValue) && salvoValue > 1;
 
-          const token = resolveTargetToken(target, actor);
-          const tokenDocument = token?.document ?? token ?? null;
+      const fields = this.fields ?? (this.fields = {});
+      if (!canPinning && fields.pinning) {
+        fields.pinning = false;
+      }
 
-          return typeof actor.speakerData === "function"
-            ? actor.speakerData(tokenDocument)
-            : null;
-        })
-        .filter(Boolean);
+      const actor = this.actor ?? this.token?.actor ?? null;
+      const isEngaged = Boolean(getEngagedEffect(actor));
+      const pistolTrait = weapon?.system?.traits;
+      const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
+      const canPistolsInMelee = hasPistolTrait && isEngaged;
+      this._combatOptionsCanPistolsInMelee = canPistolsInMelee;
+
+      return context;
+    }, 'WRAPPER');
+
+    // Patch _getSubmissionData
+    libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._getSubmissionData', function(wrapped) {
+      const submitData = foundry.utils.mergeObject(this.data ?? {}, this.fields ?? {});
+      submitData.context = this.context;
+
+      if (!this.context?.skipTargets) {
+        const rawTargets = Array.isArray(submitData.targets)
+          ? submitData.targets
+          : Array.from(submitData.targets ?? []);
+
+        submitData.targets = rawTargets
+          .map((target) => {
+            const actor = resolveTargetActor(target);
+            if (!actor) return null;
+
+            const token = resolveTargetToken(target, actor);
+            const tokenDocument = token?.document ?? token ?? null;
+
+            return typeof actor.speakerData === "function"
+              ? actor.speakerData(tokenDocument)
+              : null;
+          })
+          .filter(Boolean);
+      }
+
+      if (typeof this.createBreakdown === "function") {
+        submitData.context.breakdown = this.createBreakdown();
+      }
+
+      return submitData;
+    }, 'OVERRIDE');
+
+    console.log("Combat Extender: LibWrapper patches registered successfully");
+
+    // Register script for submission data
+    if (game.wng?.registerScript) {
+      game.wng.registerScript("dialog", {
+        id: "wng-combat-extender",
+        label: "Combat Extender",
+        hide: () => false,
+        submit(dialog) {
+          dialog.flags = dialog.flags ?? {};
+          dialog.flags.combatExtender = {
+            delta: dialog._combatExtenderDelta ?? null
+          };
+        }
+      });
     }
+  });
+});
 
-    if (typeof this.createBreakdown === "function") {
-      submitData.context.breakdown = this.createBreakdown();
-    }
-
-    // DON'T clear targets after attack - we need them for the damage dialog!
-    // The damage roll's applyToTargets() checks game.user.targets first, then
-    // falls back to stored target data. By preserving the selection, users can:
-    // 1. Apply damage immediately without re-targeting
-    // 2. Add additional targets if they forgot to target someone
-    // 3. Change targets if needed before applying damage
-    // 
-    // Original code that cleared targets:
-    // if (canvas?.scene) {
-    //   game.canvas.tokens.setTargets([]);
-    // }
-
-    return submitData;
-  };
-
-  prototype.computeFields = async function (...args) {
-    const result = await originalComputeFields.apply(this, args);
-
-    this._combatExtenderSystemBaseline = foundry.utils.deepClone(this.fields ?? {});
-
-    try {
-      await applyCombatExtender(this);
-    } catch (err) {
-      logError("Combat Extender computeFields patch failed", err);
-    }
-
-    return result ?? this.fields;
-  };
-
-  patchedWeaponDialogPrototypes.add(prototype);
-  return true;
-}
+const patchedWeaponDialogPrototypes = new WeakSet();
 
 function resolveTargetActor(target) {
   if (!target) return null;
@@ -614,30 +628,6 @@ async function applyCombatExtender(dialog) {
   return dialog.fields;
 }
 
-Hooks.once("ready", () => {
-  // Patch WeaponDialog prototype early, before any dialogs are opened
-  if (game.wng?.applications?.WeaponDialog) {
-    const WeaponDialogClass = game.wng.applications.WeaponDialog;
-    const dummyDialog = Object.create(WeaponDialogClass.prototype);
-    ensureWeaponDialogPatched(dummyDialog);
-    console.log("Combat Extender: Pre-patched WeaponDialog on ready");
-  }
-
-  if (game.wng?.registerScript) {
-    game.wng.registerScript("dialog", {
-      id: "wng-combat-extender",
-      label: "Combat Extender",
-      hide: () => false,
-      submit(dialog) {
-        dialog.flags = dialog.flags ?? {};
-        dialog.flags.combatExtender = {
-          delta: dialog._combatExtenderDelta ?? null
-        };
-      }
-    });
-  }
-});
-
 function trackManualOverrideSnapshots(app, html) {
   const $html = html instanceof jQuery ? html : $(html);
 
@@ -709,8 +699,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
     app._isRendering = true;
 
     try {
-      ensureWeaponDialogPatched(app);
-
       const $html = html instanceof jQuery ? html : $(html);
 
       // Remove the default system Aim checkbox - Combat Options will handle it
