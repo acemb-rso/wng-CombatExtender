@@ -391,6 +391,35 @@ async function applyCombatExtender(dialog) {
   const manualOverrides = manualOverridesRaw && Object.keys(manualOverridesRaw).length
     ? manualOverridesRaw
     : null;
+  
+    // --- Pistols while Engaged ---
+  const actor = dialog.actor ?? dialog.token?.actor ?? null;
+  const isEngaged = Boolean(getEngagedEffect(actor));
+
+  const traits = weapon?.system?.traits;
+  const hasPistol = Boolean(traits?.has?.("pistol") || traits?.get?.("pistol"));
+
+  const rangeBand = String(dialog._combatExtenderRangeBand ?? "").toLowerCase();
+
+  if (isEngaged && weapon?.isRanged && hasPistol) {
+    // +2 DN when firing pistols while engaged
+    difficulty += 2;
+    addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
+
+    // Cannot Aim while engaged
+    if (fields.aim) fields.aim = false;
+
+    // Short range bonus die is not allowed while engaged
+    if (rangeBand === "short") {
+      pool -= 1;
+      addTooltip("pool", -1, "Short Range suppressed (Engaged + Pistol)");
+    }
+
+    // Keep UI flag consistent if you want it as “informational”
+    fields.pistolsInMelee = true;
+  }
+  // --- end pistols ---
+  
 
   let pool = Number(fields.pool ?? 0);
   let difficulty = Number(fields.difficulty ?? 0);
@@ -653,6 +682,9 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       return;
     }
     app._isRendering = true;
+
+    // Cache system-determined range band for computeFields / applyCombatExtender
+    app._combatExtenderRangeBand = String($html.find('select[name="range"]').val() ?? "").toLowerCase();
 
     try {
       ensureWeaponDialogPatched(app);
