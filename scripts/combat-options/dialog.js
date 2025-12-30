@@ -423,6 +423,13 @@ async function applyCombatExtender(dialog) {
 
   const rangeBand = String(dialog._combatExtenderRangeBand ?? "").toLowerCase();
 
+console.log("CE: isEngaged =", isEngaged);
+console.log("CE: weapon.isRanged =", weapon?.isRanged);
+console.log("CE: hasPistol =", hasPistol);
+console.log("CE: rangeBand =", rangeBand);
+console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPistol));
+
+  
   if (isEngaged && weapon?.isRanged && hasPistol) {
     // +2 DN when firing pistols while engaged
     difficulty += 2;
