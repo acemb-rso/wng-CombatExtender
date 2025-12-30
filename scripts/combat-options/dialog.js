@@ -172,12 +172,6 @@ Hooks.once("setup", () => {
 
   console.log("Combat Extender: Setting up libWrapper patches");
 
-  // Patch computeFields to run applyCombatExtender after system computation
-  libWrapper.register(MODULE_ID, 'CONFIG.Item.documentClasses.weapon.prototype.roll', async function(wrapped, ...args) {
-    // This intercepts weapon rolls, but we need the dialog class
-    return wrapped(...args);
-  }, 'WRAPPER');
-
   // Better approach: patch the WeaponDialog class methods
   // We need to wait for it to be available
   Hooks.once("ready", () => {
