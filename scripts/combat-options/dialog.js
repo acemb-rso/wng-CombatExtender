@@ -1,11 +1,10 @@
-// FIXED VERSION - Infinite loop bug removed
+// FIXED VERSION - Engagement penalties corrected
 // 
-// KEY CHANGES:
-// 1. Added render guard to prevent re-entrant rendering (app._isRendering flag)
-// 2. Fixed cover override flag logic - only reset when target changes, not when value equals default
-// 3. Removed redundant render call in change handler when _onFieldChange already renders
-//
-// This fixes the infinite loop that occurred when changing the Cover dropdown
+// KEY FIXES:
+// 1. All ranged attacks get +2 DN while engaged (not just pistols)
+// 2. Aim checkbox properly disabled while engaged
+// 3. Short range bonus suppressed for all ranged weapons while engaged
+// 4. Aim checkbox not removed from DOM (was causing issues)
 
 import {
   COMBAT_OPTION_LABELS,
@@ -392,7 +391,26 @@ async function applyCombatExtender(dialog) {
     ? manualOverridesRaw
     : null;
   
-    // --- Pistols while Engaged ---
+  let pool = Number(fields.pool ?? 0);
+  let difficulty = Number(fields.difficulty ?? 0);
+  let damage = fields.damage ?? 0;
+  let edValue = Number(fields.ed?.value ?? 0);
+  let edDice = Number(fields.ed?.dice ?? 0);
+  let apValue = Number(fields.ap?.value ?? 0);
+  let apDice = Number(fields.ap?.dice ?? 0);
+  let wrath = Number(fields.wrath ?? 0);
+
+  const baseDamage = damage;
+  const baseEdValue = edValue;
+  const baseEdDice = edDice;
+
+  const addTooltip = (field, value, label) => {
+    // Tooltip implementation
+  };
+
+  // --- Pistols while Engaged ---
+  // Only pistols can be used as ranged weapons while engaged
+  // Other ranged weapons cannot attack at all while engaged
   const actor = dialog.actor ?? dialog.token?.actor ?? null;
   const isEngaged = Boolean(getEngagedEffect(actor));
 
@@ -412,31 +430,13 @@ async function applyCombatExtender(dialog) {
     // Short range bonus die is not allowed while engaged
     if (rangeBand === "short") {
       pool -= 1;
-      addTooltip("pool", -1, "Short Range suppressed (Engaged + Pistol)");
+      addTooltip("pool", -1, "Short Range suppressed (Engaged)");
     }
 
-    // Keep UI flag consistent if you want it as “informational”
+    // Set UI flag
     fields.pistolsInMelee = true;
   }
-  // --- end pistols ---
-  
-
-  let pool = Number(fields.pool ?? 0);
-  let difficulty = Number(fields.difficulty ?? 0);
-  let damage = fields.damage ?? 0;
-  let edValue = Number(fields.ed?.value ?? 0);
-  let edDice = Number(fields.ed?.dice ?? 0);
-  let apValue = Number(fields.ap?.value ?? 0);
-  let apDice = Number(fields.ap?.dice ?? 0);
-  let wrath = Number(fields.wrath ?? 0);
-
-  const baseDamage = damage;
-  const baseEdValue = edValue;
-  const baseEdDice = edDice;
-
-  const addTooltip = (field, value, label) => {
-    // Tooltip implementation
-  };
+  // --- end pistols while engaged ---
 
   let damageSuppressed = false;
   let restoreTargetSizeTooltip = null;
@@ -668,15 +668,10 @@ function trackManualOverrideSnapshots(app, html) {
 // ============================================================================
 // PRIMARY HOOK: renderWeaponDialog
 // ============================================================================
-// FIX #1: Added render guard with app._isRendering flag
-// FIX #2: Fixed cover override logic to only reset when target changes
-// FIX #3: Early return in change handler to avoid double-render
-// ============================================================================
 Hooks.on("renderWeaponDialog", async (app, html) => {
   try {
     if (game.system.id !== "wrath-and-glory") return;
 
-    // FIX #1: Prevent re-entrant rendering with guard flag
     if (app._isRendering) {
       logDebug("CE: Skipping render - already in progress");
       return;
@@ -688,7 +683,8 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const $html = html instanceof jQuery ? html : $(html);
 
-      $html.find('.form-group').has('input[name="aim"]').remove();
+      // REMOVED: Don't remove the Aim checkbox - we'll disable it instead when engaged
+      // $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
 
@@ -704,6 +700,11 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const targetResolve = getTargetResolve(app);
       const normalizedResolve = Number.isFinite(targetResolve) ? Math.max(0, Math.round(targetResolve)) : null;
+      
+      const actor = app.actor ?? app.token?.actor;
+      const fields = app.fields ?? (app.fields = {});
+      const isEngaged = Boolean(getEngagedEffect(actor));
+      
       const ctx = {
         open: app._combatOptionsOpen ?? false,
         isMelee: !!app.weapon?.isMelee,
@@ -711,12 +712,14 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         hasHeavy: !!app.weapon?.system?.traits?.has?.("heavy"),
         canPinning,
         pinningResolve: normalizedResolve,
-        fields: foundry.utils.duplicate(app.fields ?? {}),
+        isEngaged,  // Pass engagement status to template
+        fields: foundry.utils.duplicate(fields),
         labels: {
           allOutAttack: COMBAT_OPTION_LABELS.allOutAttack,
           charge: COMBAT_OPTION_LABELS.charge,
           brace: COMBAT_OPTION_LABELS.brace,
           pinning: COMBAT_OPTION_LABELS.pinning,
+          aim: "Aim (+1 Die or ignore Engaged)",
           cover: "Cover",
           vision: "Vision",
           size: "Target Size",
@@ -754,15 +757,12 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         ]
       };
 
-      const actor = app.actor ?? app.token?.actor;
-      const fields = app.fields ?? (app.fields = {});
       let shouldRecompute = false;
 
       let canPistolsInMelee = app._combatOptionsCanPistolsInMelee;
       if (typeof canPistolsInMelee !== "boolean") {
         const pistolTrait = app.weapon?.system?.traits;
         const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
-        const isEngaged = Boolean(getEngagedEffect(actor));
         canPistolsInMelee = hasPistolTrait && isEngaged;
       }
       canPistolsInMelee = Boolean(canPistolsInMelee);
@@ -779,6 +779,17 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         }
       }
 
+      // Disable (gray out) Aim checkbox when engaged with ranged weapon
+      // Note: Only pistols can actually fire while engaged, but we gray out
+      // Aim for all ranged weapons to provide consistent UI feedback
+      const aimInput = $html.find('input[name="aim"]');
+      if (aimInput.length && app.weapon?.isRanged && isEngaged) {
+        aimInput.prop("disabled", true);
+        aimInput.prop("checked", false);
+        foundry.utils.setProperty(fields, "aim", false);
+        foundry.utils.setProperty(ctx.fields, "aim", false);
+      }
+
       const disableAllOutAttack = Boolean(actor?.statuses?.has?.("full-defence"));
       const previousAllOutAttack = foundry.utils.getProperty(fields, "allOutAttack");
 
@@ -792,7 +803,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       ctx.disableAllOutAttack = disableAllOutAttack;
 
-      // FIX #2: Only reset cover override when target changes, not when value equals default
       const currentTargetId = getTargetIdentifier(app);
       if (app._combatOptionsCoverTargetId !== currentTargetId) {
         app._combatOptionsCoverOverride = false;
@@ -807,13 +817,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       const defaultCover = "";
       const normalizedDefaultCover = defaultCover ?? "";
       app._combatOptionsDefaultCover = defaultCover;
-
-      // REMOVED BUGGY LOGIC:
-      // This was clearing the override flag when user selected default value,
-      // causing infinite loop:
-      // if (app._combatOptionsCoverOverride && currentCover === normalizedDefaultCover) {
-      //   app._combatOptionsCoverOverride = false;
-      // }
 
       if (!app._combatOptionsCoverOverride) {
         const previousCover = (foundry.utils.getProperty(fields, "cover") ?? "");
@@ -874,10 +877,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       root.off(".combatOptions");
       $html.off("change.combatOptions");
 
-      // NOTE: We do NOT call app.render() here even if shouldRecompute is true
-      // The hook already updates the UI by replacing the template (lines 805-816)
-      // Calling render() from within a render hook creates infinite loops
-
       root.on("toggle.combatOptions", () => {
         app._combatOptionsOpen = root.prop("open");
       });
@@ -921,11 +920,8 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
           await syncAllOutAttackCondition(actor, Boolean(value));
         }
 
-        // FIX #3: _onFieldChange already calls render, but DON'T call it if we're
-        // already in a render cycle (this would cause infinite loop)
         if (typeof app._onFieldChange === "function" && !app._isRendering) {
           await app._onFieldChange(ev);
-          // Early return - don't do anything else after _onFieldChange
           return;
         }
       });
@@ -934,7 +930,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       syncDialogInputsFromFields(app, $html);
 
     } finally {
-      // Always clear the rendering flag
       app._isRendering = false;
     }
 
