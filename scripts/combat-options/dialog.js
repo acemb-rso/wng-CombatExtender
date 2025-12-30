@@ -615,6 +615,14 @@ async function applyCombatExtender(dialog) {
 }
 
 Hooks.once("ready", () => {
+  // Patch WeaponDialog prototype early, before any dialogs are opened
+  if (game.wng?.applications?.WeaponDialog) {
+    const WeaponDialogClass = game.wng.applications.WeaponDialog;
+    const dummyDialog = Object.create(WeaponDialogClass.prototype);
+    ensureWeaponDialogPatched(dummyDialog);
+    console.log("Combat Extender: Pre-patched WeaponDialog on ready");
+  }
+
   if (game.wng?.registerScript) {
     game.wng.registerScript("dialog", {
       id: "wng-combat-extender",
