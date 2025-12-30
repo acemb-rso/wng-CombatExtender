@@ -683,9 +683,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
     }
     app._isRendering = true;
 
-    // Cache system-determined range band for computeFields / applyCombatExtender
-    app._combatExtenderRangeBand = String($html.find('select[name="range"]').val() ?? "").toLowerCase();
-
     try {
       ensureWeaponDialogPatched(app);
 
@@ -695,6 +692,10 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
 
+
+      // Cache system-determined range band for computeFields / applyCombatExtender
+      app._combatExtenderRangeBand = String($html.find('select[name="range"]').val() ?? "").toLowerCase();
+      
       const attackSection = $html.find(".attack");
       if (!attackSection.length) return;
 
