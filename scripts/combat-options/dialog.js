@@ -172,18 +172,45 @@ Hooks.once("setup", () => {
 
   console.log("Combat Extender: Setting up libWrapper patches");
 
-  // Better approach: patch the WeaponDialog class methods
-  // We need to wait for it to be available
+  // Wait for ready and then check multiple times for WeaponDialog
   Hooks.once("ready", () => {
-    if (!game.wng?.applications?.WeaponDialog) {
-      console.error("Combat Extender: WeaponDialog class not found");
+    // Try immediate access
+    if (game.wng?.applications?.WeaponDialog) {
+      registerLibWrapperPatches();
       return;
     }
 
-    const WeaponDialogClass = game.wng.applications.WeaponDialog;
-    
-    // Patch _defaultFields
-    libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._defaultFields', function(wrapped) {
+    // If not available, try after a short delay
+    setTimeout(() => {
+      if (game.wng?.applications?.WeaponDialog) {
+        registerLibWrapperPatches();
+        return;
+      }
+      console.error("Combat Extender: WeaponDialog class not found after delay");
+    }, 100);
+  });
+
+  // Also hook into the first render as a fallback
+  Hooks.once("renderWeaponDialog", (app) => {
+    if (!game.wng?.applications?.WeaponDialog) {
+      console.log("Combat Extender: Registering patches on first render");
+      registerLibWrapperPatches();
+    }
+  });
+});
+
+function registerLibWrapperPatches() {
+  if (!game.wng?.applications?.WeaponDialog) {
+    console.error("Combat Extender: WeaponDialog class not found in registerLibWrapperPatches");
+    return;
+  }
+
+  console.log("Combat Extender: Registering libWrapper patches now");
+  
+  const WeaponDialogClass = game.wng.applications.WeaponDialog;
+  
+  // Patch _defaultFields
+  libWrapper.register(MODULE_ID, 'game.wng.applications.WeaponDialog.prototype._defaultFields', function(wrapped) {
       const baseFields = wrapped();
       return foundry.utils.mergeObject(baseFields, {
         cover: "",
@@ -300,8 +327,10 @@ Hooks.once("setup", () => {
         }
       });
     }
-  });
-});
+  } catch (err) {
+    console.error("Combat Extender: Error registering libWrapper patches", err);
+  }
+}
 
 const patchedWeaponDialogPrototypes = new WeakSet();
 
