@@ -408,10 +408,6 @@ async function applyCombatExtender(dialog) {
     // Tooltip implementation
   };
 
-  console.log("=== CE DEBUG START ===");
-  console.log("CE: fields.aim at start =", fields.aim);
-  console.log("CE: fields.pool at start =", fields.pool);
-  
   // --- Pistols while Engaged ---
   // Only pistols can be used as ranged weapons while engaged
   // Other ranged weapons cannot attack at all while engaged
@@ -421,22 +417,19 @@ async function applyCombatExtender(dialog) {
   const traits = weapon?.system?.traits;
   const hasPistol = Boolean(traits?.has?.("pistol") || traits?.get?.("pistol"));
 
-  const rangeBand = String(dialog._combatExtenderRangeBand ?? "").toLowerCase();
+  // Use fields.range which is already calculated by system's computeRange()
+  // instead of DOM cache which may not be set yet on first render
+  const rangeBand = String(dialog.fields?.range ?? "").toLowerCase();
 
-console.log("CE: isEngaged =", isEngaged);
-console.log("CE: weapon.isRanged =", weapon?.isRanged);
-console.log("CE: hasPistol =", hasPistol);
-console.log("CE: rangeBand =", rangeBand);
-console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPistol));
+  // Clear Aim for ANY ranged weapon while engaged
+  if (isEngaged && weapon?.isRanged) {
+    if (fields.aim) fields.aim = false;
+  }
 
-  
   if (isEngaged && weapon?.isRanged && hasPistol) {
     // +2 DN when firing pistols while engaged
     difficulty += 2;
     addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
-
-    // Cannot Aim while engaged
-    if (fields.aim) fields.aim = false;
 
     // Short range bonus die is not allowed while engaged
     if (rangeBand === "short") {
@@ -464,11 +457,9 @@ console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPisto
     logDebug("CE charge:", { previousPool: pool - 1, nextPool: pool });
   }
 
-  if (fields.aim) {
-    pool += 1;
-    addTooltip("pool", 1, "Aim (+1 Die)");
-    logDebug("CE aim:", { previousPool: pool - 1, nextPool: pool });
-  }
+  // NOTE: Aim bonus is already added by the system's computeFields()
+  // Combat Extender only needs to SUPPRESS it when engaged, not add it
+  // Removed: if (fields.aim) { pool += 1; }
 
   const visionKey = fields.visionPenalty;
   const visionPenaltyData = VISION_PENALTIES[visionKey];
@@ -600,10 +591,6 @@ console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPisto
     fields.ap = foundry.utils.deepClone(systemBaselineSnapshot.ap ?? fields.ap);
   }
 
-  console.log("CE: fields.aim at end =", fields.aim);
-  console.log("CE: fields.pool at end =", fields.pool);
-  console.log("=== CE DEBUG END ===");
-  
   return dialog.fields;
 }
 
@@ -698,15 +685,11 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const $html = html instanceof jQuery ? html : $(html);
 
-    
+      // Remove the default system Aim checkbox - Combat Options will handle it
       $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
 
-
-      // Cache system-determined range band for computeFields / applyCombatExtender
-      app._combatExtenderRangeBand = String($html.find('select[name="range"]').val() ?? "").toLowerCase();
-      
       const attackSection = $html.find(".attack");
       if (!attackSection.length) return;
 
@@ -794,17 +777,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         }
       }
 
-      // Disable (gray out) Aim checkbox when engaged with ranged weapon
-      // Note: Only pistols can actually fire while engaged, but we gray out
-      // Aim for all ranged weapons to provide consistent UI feedback
-      const aimInput = $html.find('input[name="aim"]');
-      if (aimInput.length && app.weapon?.isRanged && isEngaged) {
-        aimInput.prop("disabled", true);
-        aimInput.prop("checked", false);
-        foundry.utils.setProperty(fields, "aim", false);
-        foundry.utils.setProperty(ctx.fields, "aim", false);
-      }
-
       const disableAllOutAttack = Boolean(actor?.statuses?.has?.("full-defence"));
       const previousAllOutAttack = foundry.utils.getProperty(fields, "allOutAttack");
 
@@ -875,6 +847,15 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       }
 
       const root = attackSection.find("[data-co-root]");
+      
+      // Disable Aim checkbox in Combat Options if engaged with ranged weapon
+      if (isEngaged && app.weapon?.isRanged) {
+        const coAimInput = root.find('input[name="aim"]');
+        if (coAimInput.length) {
+          coAimInput.prop("disabled", true);
+          coAimInput.prop("checked", false);
+        }
+      }
       if (root.length && typeof app._onFieldChange === "function") {
         root.find("[name]").each((_, el) => {
           if (el.dataset?.co) return;
