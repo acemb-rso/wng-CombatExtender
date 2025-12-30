@@ -457,8 +457,6 @@ async function applyCombatExtender(dialog) {
     console.log("CE: NOT in engagement block");
   }
   // --- end pistols while engaged ---
-  }
-  // --- end pistols while engaged ---
 
   let damageSuppressed = false;
   let restoreTargetSizeTooltip = null;
