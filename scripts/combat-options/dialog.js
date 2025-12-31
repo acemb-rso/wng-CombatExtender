@@ -422,8 +422,14 @@ async function applyCombatExtender(dialog) {
     difficulty += 2;
     addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
 
-    // Cannot Aim while engaged
-    if (fields.aim) fields.aim = false;
+  // Cannot Aim while engaged
+  if (fields.aim) {
+    // System computeFields already added +1 die for Aim, so strip it out
+    pool -= 1;
+    addTooltip("pool", -1, "Aim suppressed (Engaged)");
+    fields.aim = false;
+  }
+
 
     // Short range bonus die is not allowed while engaged
     if (rangeBand === "short") {
@@ -790,9 +796,9 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         ]
       };
 
-      const actor = app.actor ?? app.token?.actor;
+      //const actor = app.actor ?? app.token?.actor;
       const fields = app.fields ?? (app.fields = {});
-      const isEngaged = Boolean(getEngagedEffect(actor));
+      //const isEngaged = Boolean(getEngagedEffect(actor));
       let shouldRecompute = false;
 
       let canPistolsInMelee = app._combatOptionsCanPistolsInMelee;
