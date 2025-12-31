@@ -721,14 +721,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         }
       }
 
-      // Disable Aim checkbox when engaged (needs to happen after Combat Options UI is added)
-      //const actor = app.actor ?? app.token?.actor;
-      //const isEngaged = Boolean(getEngagedEffect(actor));
-      if (isEngaged && app.weapon?.isRanged) {
-        // This will be set up later after Combat Options renders
-        // We'll do it in the section that already handles this
-      }
-
       $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
@@ -795,9 +787,8 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         ]
       };
 
-      //const actor = app.actor ?? app.token?.actor;
+
       const fields = app.fields ?? (app.fields = {});
-      //const isEngaged = Boolean(getEngagedEffect(actor));
       let shouldRecompute = false;
 
       let canPistolsInMelee = app._combatOptionsCanPistolsInMelee;
