@@ -699,7 +699,7 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         if (isEngaged && weapon?.isRanged && hasPistol) {
           console.log("CE: Fixing initial values for first open (engaged)");
           
-          // Clear aim in fields
+          // Clear aim in fields and disable checkbox
           if (app.fields.aim) app.fields.aim = false;
           
           // Add +2 DN for engagement
@@ -714,6 +714,14 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
             $html.find('input[name="pool"]').val(newPool);
           }
         }
+      }
+
+      // Disable Aim checkbox when engaged (needs to happen after Combat Options UI is added)
+      const actor = app.actor ?? app.token?.actor;
+      const isEngaged = Boolean(getEngagedEffect(actor));
+      if (isEngaged && app.weapon?.isRanged) {
+        // This will be set up later after Combat Options renders
+        // We'll do it in the section that already handles this
       }
 
       $html.find('.form-group').has('input[name="aim"]').remove();
@@ -784,13 +792,13 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const actor = app.actor ?? app.token?.actor;
       const fields = app.fields ?? (app.fields = {});
+      const isEngaged = Boolean(getEngagedEffect(actor));
       let shouldRecompute = false;
 
       let canPistolsInMelee = app._combatOptionsCanPistolsInMelee;
       if (typeof canPistolsInMelee !== "boolean") {
         const pistolTrait = app.weapon?.system?.traits;
         const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
-        const isEngaged = Boolean(getEngagedEffect(actor));
         canPistolsInMelee = hasPistolTrait && isEngaged;
       }
       canPistolsInMelee = Boolean(canPistolsInMelee);
@@ -878,6 +886,17 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       }
 
       const root = attackSection.find("[data-co-root]");
+      
+      // Disable Aim checkbox when engaged with ranged weapon
+      if (isEngaged && app.weapon?.isRanged) {
+        const aimCheckbox = root.find('input[name="aim"]');
+        if (aimCheckbox.length) {
+          aimCheckbox.prop("disabled", true);
+          aimCheckbox.prop("checked", false);
+          foundry.utils.setProperty(fields, "aim", false);
+        }
+      }
+      
       if (root.length && typeof app._onFieldChange === "function") {
         root.find("[name]").each((_, el) => {
           if (el.dataset?.co) return;
