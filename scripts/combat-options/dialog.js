@@ -673,11 +673,16 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
     try {
       const wasJustPatched = ensureWeaponDialogPatched(app);
+      
+      console.log("CE: wasJustPatched =", wasJustPatched);
+      console.log("CE: fields before recompute:", app.fields?.pool, app.fields?.difficulty, app.fields?.aim);
 
       // If we just applied patches for the first time, recompute fields
       // so the fixes take effect on the first dialog open
       if (wasJustPatched && typeof app.computeFields === "function") {
+        console.log("CE: Calling computeFields to apply patches on first open");
         await app.computeFields();
+        console.log("CE: fields after recompute:", app.fields?.pool, app.fields?.difficulty, app.fields?.aim);
       }
 
       const $html = html instanceof jQuery ? html : $(html);
