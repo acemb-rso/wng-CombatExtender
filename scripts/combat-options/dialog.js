@@ -345,6 +345,8 @@ async function applyCombatExtender(dialog) {
   const weapon = dialog.weapon;
   if (!weapon) return;
 
+  console.log("=== applyCombatExtender START ===");
+
   const fields = dialog.fields ?? (dialog.fields = {});
 
   const systemBaseline = dialog._combatExtenderSystemBaseline;
@@ -391,6 +393,8 @@ async function applyCombatExtender(dialog) {
   let apDice = Number(fields.ap?.dice ?? 0);
   let wrath = Number(fields.wrath ?? 0);
 
+  console.log("CE: Initial values - pool:", pool, "difficulty:", difficulty, "damage:", damage, "aim:", fields.aim);
+
   const baseDamage = damage;
   const baseEdValue = edValue;
   const baseEdDice = edDice;
@@ -410,7 +414,10 @@ async function applyCombatExtender(dialog) {
   // DOM cache (_combatExtenderRangeBand) isn't set yet on first dialog open
   const rangeBand = String(dialog.fields?.range ?? "").toLowerCase();
 
+  console.log("CE: Engagement check - isEngaged:", isEngaged, "hasPistol:", hasPistol, "rangeBand:", rangeBand);
+
   if (isEngaged && weapon?.isRanged && hasPistol) {
+    console.log("CE: Applying engagement penalties");
     // +2 DN when firing pistols while engaged
     difficulty += 2;
     addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
@@ -552,6 +559,9 @@ async function applyCombatExtender(dialog) {
   fields.ap = finalAp;
   fields.wrath = finalWrath;
 
+  console.log("CE: Final values - pool:", fields.pool, "difficulty:", fields.difficulty, "damage:", fields.damage, "aim:", fields.aim);
+  console.log("=== applyCombatExtender END ===");
+
   const actorForSafety = dialog.actor ?? dialog.token?.actor ?? null;
   const isEngagedForSafety = Boolean(getEngagedEffect(actorForSafety));
   const engagedRangedForSafety = Boolean(weapon?.isRanged && isEngagedForSafety);
@@ -672,18 +682,7 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
     app._isRendering = true;
 
     try {
-      const wasJustPatched = ensureWeaponDialogPatched(app);
-      
-      console.log("CE: wasJustPatched =", wasJustPatched);
-      console.log("CE: fields before recompute:", app.fields?.pool, app.fields?.difficulty, app.fields?.aim);
-
-      // If we just applied patches for the first time, recompute fields
-      // so the fixes take effect on the first dialog open
-      if (wasJustPatched && typeof app.computeFields === "function") {
-        console.log("CE: Calling computeFields to apply patches on first open");
-        await app.computeFields();
-        console.log("CE: fields after recompute:", app.fields?.pool, app.fields?.difficulty, app.fields?.aim);
-      }
+      ensureWeaponDialogPatched(app);
 
       const $html = html instanceof jQuery ? html : $(html);
 
