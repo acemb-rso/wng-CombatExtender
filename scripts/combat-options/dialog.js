@@ -1,30 +1,13 @@
 // Combat Extender for Wrath & Glory
 // 
-// VERSION HISTORY:
-// v1.0 - Initial version with infinite loop bug
-// v1.1 - Fixed infinite loop bug (removed re-entrant rendering)
-// v1.2 - CURRENT VERSION - Bug fixes for Aim and Engagement
+// VERSION: v1.2 - Aim & Engagement Bug Fixes
 //
-// CURRENT FIXES (v1.2):
-// 1. Fixed duplicate Aim bonus - System already adds +1 for Aim, Combat Extender 
-//    was adding it again causing +2 total. Now Combat Extender only SUPPRESSES 
-//    Aim when engaged, doesn't add it.
+// CHANGES FROM v1.1:
+// - Fixed duplicate Aim bonus (was adding +2 instead of +1)
+// - Fixed short range suppression on first open (use dialog.fields.range instead of DOM cache)  
+// - Trigger recompute after first patch to fix first-open timing issue
 //
-// 2. Fixed short range suppression not working on first dialog open - Changed from 
-//    reading cached DOM value (dialog._combatExtenderRangeBand) to reading 
-//    dialog.fields.range which is calculated by system before computeFields runs.
-//
-// 3. Fixed system Aim checkbox removal - Removes duplicate system Aim checkbox so 
-//    only Combat Options Aim checkbox is visible.
-//
-// 4. Changed to manual prototype patching on first render - Since WeaponDialog 
-//    class is not exported to a global path, using direct prototype patching 
-//    instead of libWrapper.
-//
-// KNOWN BEHAVIOR:
-// - Only pistols can fire ranged weapons while engaged
-// - When engaged with pistol: +2 DN, short range bonus suppressed, Aim disabled
-// - Aim bonus is +1 die (added by system, not by Combat Extender)
+// PREVIOUS: v1.1 - Fixed infinite loop bug with render guard
 
 import {
   COMBAT_OPTION_LABELS,
@@ -183,72 +166,27 @@ Hooks.once("init", async () => {
   Handlebars.registerHelper("concat", (...a) => a.slice(0, -1).join(""));
 });
 
-Hooks.once("setup", () => {
-  console.log("Combat Extender: Setup complete, will patch on first dialog render");
-});
+const patchedWeaponDialogPrototypes = new WeakSet();
 
-let prototypePatched = false;
+function ensureWeaponDialogPatched(app) {
+  const prototype = app?.constructor?.prototype ?? Object.getPrototypeOf(app);
+  if (!prototype || prototype === Application.prototype) return false;
+  if (patchedWeaponDialogPrototypes.has(prototype)) return false;
 
-// Patch on first dialog render
-Hooks.on("renderWeaponDialog", (app) => {
-  if (prototypePatched) return;
-  
-  const prototype = app?.constructor?.prototype;
-  if (!prototype) {
-    console.error("Combat Extender: Could not get prototype");
-    return;
-  }
-
-  console.log("Combat Extender: Patching WeaponDialog prototype on first render");
-
-  const originalComputeFields = prototype.computeFields;
-  const originalDefaultFields = prototype._defaultFields;
   const originalPrepareContext = prototype._prepareContext;
+  const originalDefaultFields  = prototype._defaultFields;
+  const originalComputeFields = prototype.computeFields;
   const originalGetSubmissionData = prototype._getSubmissionData;
 
-  // Patch computeFields to run applyCombatExtender
-  prototype.computeFields = async function(...args) {
-    console.log("CE: computeFields called");
-    const result = await originalComputeFields.apply(this, args);
-    
-    console.log("CE: after original, pool =", this.fields?.pool, "aim =", this.fields?.aim);
-    
-    this._combatExtenderSystemBaseline = foundry.utils.deepClone(this.fields ?? {});
-    
-    try {
-      await applyCombatExtender(this);
-    } catch (err) {
-      logError("Combat Extender patch failed", err);
-    }
-    
-    console.log("CE: after applyCombatExtender, pool =", this.fields?.pool);
-    
-    return result ?? this.fields;
-  };
+  if (typeof originalPrepareContext !== "function" ||
+      typeof originalDefaultFields  !== "function" ||
+      typeof originalGetSubmissionData !== "function" ||
+      typeof originalComputeFields !== "function") {
+    logError("WeaponDialog prototype missing expected methods");
+    return false;
+  }
 
-  // Patch _defaultFields
-  prototype._defaultFields = function() {
-    const baseFields = originalDefaultFields.call(this);
-    return foundry.utils.mergeObject(baseFields, {
-      cover: "",
-      visionPenalty: "",
-      sizeModifier: "",
-      allOutAttack: false,
-      charging: false,
-      aim: false,
-      brace: false,
-      pinning: false,
-      pistolsInMelee: false,
-      disarm: false,
-      calledShot: {
-        enabled: false,
-        size: ""
-      }
-    });
-  };
-
-  // Patch _prepareContext
-  prototype._prepareContext = async function(options) {
+  prototype._prepareContext = async function (options) {
     const context = await originalPrepareContext.call(this, options);
 
     context.coverOptions = {
@@ -270,14 +208,33 @@ Hooks.on("renderWeaponDialog", (app) => {
     const isEngaged = Boolean(getEngagedEffect(actor));
     const pistolTrait = weapon?.system?.traits;
     const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
-    const canPistolsInMelie = hasPistolTrait && isEngaged;
-    this._combatOptionsCanPistolsInMelee = canPistolsInMelie;
+    const canPistolsInMelee = hasPistolTrait && isEngaged;
+    this._combatOptionsCanPistolsInMelee = canPistolsInMelee;
 
     return context;
   };
 
-  // Patch _getSubmissionData
-  prototype._getSubmissionData = function() {
+  prototype._defaultFields = function () {
+    const baseFields = originalDefaultFields.call(this);
+    return foundry.utils.mergeObject(baseFields, {
+      cover: "",
+      visionPenalty: "",
+      sizeModifier: "",
+      allOutAttack: false,
+      charging: false,
+      aim: false,
+      brace: false,
+      pinning: false,
+      pistolsInMelee: false,
+      disarm: false,
+      calledShot: {
+        enabled: false,
+        size: ""
+      }
+    });
+  };
+
+  prototype._getSubmissionData = function () {
     const submitData = foundry.utils.mergeObject(this.data ?? {}, this.fields ?? {});
     submitData.context = this.context;
 
@@ -308,25 +265,23 @@ Hooks.on("renderWeaponDialog", (app) => {
     return submitData;
   };
 
-  prototypePatched = true;
-  console.log("Combat Extender: Prototype patches applied");
+  prototype.computeFields = async function (...args) {
+    const result = await originalComputeFields.apply(this, args);
 
-  // Register script
-  if (game.wng?.registerScript) {
-    game.wng.registerScript("dialog", {
-      id: "wng-combat-extender",
-      label: "Combat Extender",
-      hide: () => false,
-      submit(dialog) {
-        dialog.flags = dialog.flags ?? {};
-        dialog.flags.combatExtender = {
-          delta: dialog._combatExtenderDelta ?? null
-        };
-      }
-    });
-  }
-});
+    this._combatExtenderSystemBaseline = foundry.utils.deepClone(this.fields ?? {});
 
+    try {
+      await applyCombatExtender(this);
+    } catch (err) {
+      logError("Combat Extender computeFields patch failed", err);
+    }
+
+    return result ?? this.fields;
+  };
+
+  patchedWeaponDialogPrototypes.add(prototype);
+  return true;
+}
 
 function resolveTargetActor(target) {
   if (!target) return null;
@@ -407,10 +362,6 @@ async function applyCombatExtender(dialog) {
   fields.ap = foundry.utils.mergeObject({ value: 0, dice: 0 }, fields.ap ?? {}, { inplace: false });
   if (fields.damage === undefined) fields.damage = 0;
 
-  console.log("=== CE DEBUG START ===");
-  console.log("CE: fields.aim at start =", fields.aim);
-  console.log("CE: fields.pool at start =", fields.pool);
-
   logDebug("CE fields at start:", { 
     cover: fields.cover, 
     visionPenalty: fields.visionPenalty, 
@@ -449,48 +400,31 @@ async function applyCombatExtender(dialog) {
   };
 
   // --- Pistols while Engaged ---
-  // Only pistols can be used as ranged weapons while engaged
-  // Other ranged weapons cannot attack at all while engaged
   const actor = dialog.actor ?? dialog.token?.actor ?? null;
   const isEngaged = Boolean(getEngagedEffect(actor));
 
   const traits = weapon?.system?.traits;
   const hasPistol = Boolean(traits?.has?.("pistol") || traits?.get?.("pistol"));
 
-  // Use fields.range which is already calculated by system's computeRange()
-  // instead of DOM cache which may not be set yet on first render
+  // Use dialog.fields.range - it's calculated by system before computeFields runs
+  // DOM cache (_combatExtenderRangeBand) isn't set yet on first dialog open
   const rangeBand = String(dialog.fields?.range ?? "").toLowerCase();
 
-  console.log("CE: isEngaged =", isEngaged);
-  console.log("CE: weapon.isRanged =", weapon?.isRanged);
-  console.log("CE: hasPistol =", hasPistol);
-  console.log("CE: rangeBand =", rangeBand);
-  console.log("CE: engagement check =", (isEngaged && weapon?.isRanged && hasPistol));
-
   if (isEngaged && weapon?.isRanged && hasPistol) {
-    console.log("CE: INSIDE engagement block");
-    
     // +2 DN when firing pistols while engaged
     difficulty += 2;
     addTooltip("difficulty", 2, "Engaged + Pistol (+2 DN)");
 
     // Cannot Aim while engaged
-    console.log("CE: fields.aim before clear =", fields.aim);
     if (fields.aim) fields.aim = false;
-    console.log("CE: fields.aim after clear =", fields.aim);
 
     // Short range bonus die is not allowed while engaged
     if (rangeBand === "short") {
-      console.log("CE: Suppressing short range, pool before =", pool);
       pool -= 1;
-      addTooltip("pool", -1, "Short Range suppressed (Engaged)");
-      console.log("CE: pool after suppression =", pool);
+      addTooltip("pool", -1, "Short Range suppressed (Engaged + Pistol)");
     }
 
-    // Set UI flag
     fields.pistolsInMelee = true;
-  } else {
-    console.log("CE: NOT in engagement block");
   }
   // --- end pistols while engaged ---
 
@@ -509,9 +443,9 @@ async function applyCombatExtender(dialog) {
     logDebug("CE charge:", { previousPool: pool - 1, nextPool: pool });
   }
 
-  // NOTE: Aim bonus is already added by the system's computeFields()
-  // Combat Extender only needs to SUPPRESS it when engaged, not add it
-  // Removed: if (fields.aim) { pool += 1; }
+  // NOTE: Aim bonus (+1) is already added by the system's computeFields()
+  // Combat Extender should only SUPPRESS it when engaged, not add it again
+  // Removed duplicate: if (fields.aim) { pool += 1; }
 
   const visionKey = fields.visionPenalty;
   const visionPenaltyData = VISION_PENALTIES[visionKey];
@@ -643,12 +577,24 @@ async function applyCombatExtender(dialog) {
     fields.ap = foundry.utils.deepClone(systemBaselineSnapshot.ap ?? fields.ap);
   }
 
-  console.log("CE: fields.aim at end =", fields.aim);
-  console.log("CE: fields.pool at end =", fields.pool);
-  console.log("=== CE DEBUG END ===");
-
   return dialog.fields;
 }
+
+Hooks.once("ready", () => {
+  if (game.wng?.registerScript) {
+    game.wng.registerScript("dialog", {
+      id: "wng-combat-extender",
+      label: "Combat Extender",
+      hide: () => false,
+      submit(dialog) {
+        dialog.flags = dialog.flags ?? {};
+        dialog.flags.combatExtender = {
+          delta: dialog._combatExtenderDelta ?? null
+        };
+      }
+    });
+  }
+});
 
 function trackManualOverrideSnapshots(app, html) {
   const $html = html instanceof jQuery ? html : $(html);
@@ -710,10 +656,15 @@ function trackManualOverrideSnapshots(app, html) {
 // ============================================================================
 // PRIMARY HOOK: renderWeaponDialog
 // ============================================================================
+// FIX #1: Added render guard with app._isRendering flag
+// FIX #2: Fixed cover override logic to only reset when target changes
+// FIX #3: Early return in change handler to avoid double-render
+// ============================================================================
 Hooks.on("renderWeaponDialog", async (app, html) => {
   try {
     if (game.system.id !== "wrath-and-glory") return;
 
+    // FIX #1: Prevent re-entrant rendering with guard flag
     if (app._isRendering) {
       logDebug("CE: Skipping render - already in progress");
       return;
@@ -721,13 +672,24 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
     app._isRendering = true;
 
     try {
+      const wasJustPatched = ensureWeaponDialogPatched(app);
+
+      // If we just applied patches for the first time, recompute fields
+      // so the fixes take effect on the first dialog open
+      if (wasJustPatched && typeof app.computeFields === "function") {
+        await app.computeFields();
+      }
+
       const $html = html instanceof jQuery ? html : $(html);
 
-      // Remove the default system Aim checkbox - Combat Options will handle it
       $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
       $html.find('.form-group').has('select[name="calledShot.size"]').remove();
 
+
+      // Cache system-determined range band for computeFields / applyCombatExtender
+      app._combatExtenderRangeBand = String($html.find('select[name="range"]').val() ?? "").toLowerCase();
+      
       const attackSection = $html.find(".attack");
       if (!attackSection.length) return;
 
@@ -736,11 +698,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       const targetResolve = getTargetResolve(app);
       const normalizedResolve = Number.isFinite(targetResolve) ? Math.max(0, Math.round(targetResolve)) : null;
-      
-      const actor = app.actor ?? app.token?.actor;
-      const fields = app.fields ?? (app.fields = {});
-      const isEngaged = Boolean(getEngagedEffect(actor));
-      
       const ctx = {
         open: app._combatOptionsOpen ?? false,
         isMelee: !!app.weapon?.isMelee,
@@ -748,14 +705,12 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         hasHeavy: !!app.weapon?.system?.traits?.has?.("heavy"),
         canPinning,
         pinningResolve: normalizedResolve,
-        isEngaged,  // Pass engagement status to template
-        fields: foundry.utils.duplicate(fields),
+        fields: foundry.utils.duplicate(app.fields ?? {}),
         labels: {
           allOutAttack: COMBAT_OPTION_LABELS.allOutAttack,
           charge: COMBAT_OPTION_LABELS.charge,
           brace: COMBAT_OPTION_LABELS.brace,
           pinning: COMBAT_OPTION_LABELS.pinning,
-          aim: "Aim (+1 Die or ignore Engaged)",
           cover: "Cover",
           vision: "Vision",
           size: "Target Size",
@@ -793,12 +748,15 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
         ]
       };
 
+      const actor = app.actor ?? app.token?.actor;
+      const fields = app.fields ?? (app.fields = {});
       let shouldRecompute = false;
 
       let canPistolsInMelee = app._combatOptionsCanPistolsInMelee;
       if (typeof canPistolsInMelee !== "boolean") {
         const pistolTrait = app.weapon?.system?.traits;
         const hasPistolTrait = Boolean(pistolTrait?.has?.("pistol") || pistolTrait?.get?.("pistol"));
+        const isEngaged = Boolean(getEngagedEffect(actor));
         canPistolsInMelee = hasPistolTrait && isEngaged;
       }
       canPistolsInMelee = Boolean(canPistolsInMelee);
@@ -828,6 +786,7 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
       ctx.disableAllOutAttack = disableAllOutAttack;
 
+      // FIX #2: Only reset cover override when target changes, not when value equals default
       const currentTargetId = getTargetIdentifier(app);
       if (app._combatOptionsCoverTargetId !== currentTargetId) {
         app._combatOptionsCoverOverride = false;
@@ -885,15 +844,6 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       }
 
       const root = attackSection.find("[data-co-root]");
-      
-      // Disable Aim checkbox in Combat Options if engaged with ranged weapon
-      if (isEngaged && app.weapon?.isRanged) {
-        const coAimInput = root.find('input[name="aim"]');
-        if (coAimInput.length) {
-          coAimInput.prop("disabled", true);
-          coAimInput.prop("checked", false);
-        }
-      }
       if (root.length && typeof app._onFieldChange === "function") {
         root.find("[name]").each((_, el) => {
           if (el.dataset?.co) return;
@@ -954,8 +904,11 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
           await syncAllOutAttackCondition(actor, Boolean(value));
         }
 
+        // FIX #3: _onFieldChange already calls render, but DON'T call it if we're
+        // already in a render cycle (this would cause infinite loop)
         if (typeof app._onFieldChange === "function" && !app._isRendering) {
           await app._onFieldChange(ev);
+          // Early return - don't do anything else after _onFieldChange
           return;
         }
       });
@@ -964,6 +917,7 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       syncDialogInputsFromFields(app, $html);
 
     } finally {
+      // Always clear the rendering flag
       app._isRendering = false;
     }
 
