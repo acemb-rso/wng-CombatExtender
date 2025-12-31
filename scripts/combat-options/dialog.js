@@ -682,9 +682,39 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
     app._isRendering = true;
 
     try {
-      ensureWeaponDialogPatched(app);
+      const wasJustPatched = ensureWeaponDialogPatched(app);
 
       const $html = html instanceof jQuery ? html : $(html);
+
+      // If we just patched, fix the initial field values directly
+      // (computeFields already ran before we patched, so values are wrong)
+      if (wasJustPatched) {
+        const actor = app.actor ?? app.token?.actor;
+        const isEngaged = Boolean(getEngagedEffect(actor));
+        const weapon = app.weapon;
+        const traits = weapon?.system?.traits;
+        const hasPistol = Boolean(traits?.has?.("pistol") || traits?.get?.("pistol"));
+        const rangeBand = String(app.fields?.range ?? "").toLowerCase();
+
+        if (isEngaged && weapon?.isRanged && hasPistol) {
+          console.log("CE: Fixing initial values for first open (engaged)");
+          
+          // Clear aim in fields
+          if (app.fields.aim) app.fields.aim = false;
+          
+          // Add +2 DN for engagement
+          const newDifficulty = (app.fields.difficulty ?? 0) + 2;
+          app.fields.difficulty = newDifficulty;
+          $html.find('input[name="difficulty"]').val(newDifficulty);
+          
+          // Suppress short range bonus
+          if (rangeBand === "short") {
+            const newPool = (app.fields.pool ?? 0) - 1;
+            app.fields.pool = newPool;
+            $html.find('input[name="pool"]').val(newPool);
+          }
+        }
+      }
 
       $html.find('.form-group').has('input[name="aim"]').remove();
       $html.find('.form-group').has('input[name="charging"]').remove();
