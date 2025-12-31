@@ -689,14 +689,13 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
 
     try {
       const wasJustPatched = ensureWeaponDialogPatched(app);
-
+      const actor = app.actor ?? app.token?.actor;
+      const isEngaged = Boolean(getEngagedEffect(actor));
       const $html = html instanceof jQuery ? html : $(html);
 
       // If we just patched, fix the initial field values directly
       // (computeFields already ran before we patched, so values are wrong)
       if (wasJustPatched) {
-        const actor = app.actor ?? app.token?.actor;
-        const isEngaged = Boolean(getEngagedEffect(actor));
         const weapon = app.weapon;
         const traits = weapon?.system?.traits;
         const hasPistol = Boolean(traits?.has?.("pistol") || traits?.get?.("pistol"));
@@ -723,8 +722,8 @@ Hooks.on("renderWeaponDialog", async (app, html) => {
       }
 
       // Disable Aim checkbox when engaged (needs to happen after Combat Options UI is added)
-      const actor = app.actor ?? app.token?.actor;
-      const isEngaged = Boolean(getEngagedEffect(actor));
+      //const actor = app.actor ?? app.token?.actor;
+      //const isEngaged = Boolean(getEngagedEffect(actor));
       if (isEngaged && app.weapon?.isRanged) {
         // This will be set up later after Combat Options renders
         // We'll do it in the section that already handles this
